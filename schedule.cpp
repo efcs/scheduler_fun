@@ -1,3 +1,5 @@
+#include "schedule.h"
+
 #include <iostream>
 #include <vector>
 #include <cassert>
@@ -5,92 +7,120 @@
 #include <algorithm>
 #include <unordered_set>
 
-struct Task;
-struct Processor;
+#if 0
+# define PV(X) std::cout << #X " = " << X << std::endl
+# define PM(M) std::cout << "Note: " << M << std::endl
+#else
+# define PV(X) ((void)0)
+# define PM(M) ((void)0)
+#endif
 
-using TaskSet = std::unordered_set<Task*>;
-using ProcessorList = std::vector<Processor>;
-using TaskList = std::vector<Task>;
+template <class ValueType>
+bool readValueImp(std::istream& Input, ValueType& Output) {
+  while (true) {
+    Input >> Output;
+    if (Input.eof() || Input.bad())
+      return false;
+    if (Input.fail()) {
+      Input.clear();
+      Input.ignore(/*MaxSkip*/100, '\n');
+    } else {
+      assert(Input.good());
+      return true;
+    }
+  }
+}
 
-struct Task {
-  int id;
-  int type;
-  int length;
-  TaskSet Parents;
-  TaskSet Children;
-};
+template <class ...ValueTypes>
+bool readValuesImp(std::istream& Input, ValueTypes&... Outputs) {
+  return (readValueImp(Input, Outputs) && ...);
+}
 
-struct Processor {
-  int id;
-  int type;
-};
+template <class ValueType>
+auto readValue(std::istream& Input, bool& OK) {
+  ValueType Result;
+  OK = readValueImp(Input, Result);
+  return Result;
+}
 
-struct ProblemState {
-  ProblemState(ProcessorList PL, TaskList TL, int D)
-      : Procs(PL), Tasks(TL), Deadline(D) {}
-
-  ProcessorList Procs;
-  TaskList Tasks;
-  const int Deadline;
-};
+template <class ...ValueTypes>
+auto readValues(std::istream& Input, bool &OK) {
+  std::tuple<ValueTypes...> Results;
+  OK = std::apply(
+      [&](auto&... Args) { return readValuesImp(Input, Args...); },
+      Results);
+  return Results;
+}
 
 template <class Iter>
 void assignIDs(Iter begin, Iter end) {
   int ID = 0;
-  while (begin != end)
-    begin->id = ID++;
+  for (; begin != end; ++begin) {
+    begin->ID = ID++;
+  }
 }
 
 ProblemState readProblemFromInput(std::istream& Input) {
-  int NumProcT1, NumProcT2;
-  Input >> NumProcT1 >> NumProcT2;
-  assert(Input.good());
+  bool OK = false;
+  auto [NumProcT1, NumProcT2, NumTaskT1, NumTaskT2, NumTaskT3, Deadline]
+     = readValues<int, int, int, int, int, int>(Input, OK); // Read 6 ints from Input.
+  assert(OK && "Failed to read the number of processors, tasks, or deadline");
+  PV(NumProcT1); PV(NumProcT2);
+  PV(NumTaskT1); PV(NumTaskT2); PV(NumTaskT3);
+  PV(Deadline);
 
-  ProcessorList PL;
-  std::fill_n(std::back_inserter(PL), NumProcT1, Processor{-1, 1});
-  std::fill_n(std::back_inserter(PL), NumProcT2, Processor{-1, 2});
-  assignIDs(PL.begin(), PL.end());
+  ProblemState State((Deadline));
 
-  int NumTaskT1, NumTaskT2, NumTaskT3;
-  Input >> NumTaskT1 >> NumTaskT2 >> NumTaskT3;
-  assert(Input.good());
+  const int InvalidID = -1;
+  std::fill_n(std::back_inserter(State.Processors), NumProcT1, Processor{InvalidID, 1});
+  std::fill_n(std::back_inserter(State.Processors), NumProcT2, Processor{InvalidID, 2});
+  assignIDs(State.Processors.begin(), State.Processors.end());
 
-  // Start building the task lists:
-  TaskList TL;
-  std::fill_n(std::back_inserter(TL), NumTaskT1, Task{-1, 1});
-  std::fill_n(std::back_inserter(TL), NumTaskT2, Task{-1, 2});
-  std::fill_n(std::back_inserter(TL), NumTaskT3, Task{-1, 3});
-  assignIDs(TL.begin(), TL.end());
+  std::fill_n(std::back_inserter(State.Tasks), NumTaskT1, Task{InvalidID, 1});
+  std::fill_n(std::back_inserter(State.Tasks), NumTaskT2, Task{InvalidID, 2});
+  std::fill_n(std::back_inserter(State.Tasks), NumTaskT3, Task{InvalidID, 3});
+  assignIDs(State.Tasks.begin(), State.Tasks.end());
 
-  int Deadline;
-  Input >> Deadline;
-  assert(Input.good());
-
-  for (auto& CurTask : TL) {
-    Input >> CurTask.length;
-    assert(Input.good());
+  for (auto& CurTask : State.Tasks) {
+    CurTask.Duration = readValue<int>(Input, OK);
+    assert(OK && "Failed to read the length of a task");
+    PV(CurTask.ID); PV(CurTask.Duration);
   }
 
-  int NumDeps;
-  Input >> NumDeps;
-  assert(Input.good());
+  int NumDeps = readValue<int>(Input, OK);
+  assert(OK && "Failed to read the number of dependencies");
+  PV(NumDeps);
 
   for (int i=0; i < NumDeps; ++i) {
-    int ChildID, ParentID;
-    Input >> ChildID >> ParentID;
-    assert(Input.good());
+    auto [ChildID, ParentID] = readValues<int, int>(Input, OK);
+    assert(OK && "Failed to read dependancy pair");
+    PV(ChildID); PV(ParentID);
 
-    TL[ChildID].Parents.insert(&TL[ParentID]);
-    TL[ParentID].Children.insert(&TL[ChildID]);
+    // Unlike the crazy spec I use zero based indexing for the types and
+    // processors. So ajust for that now.
+    assert(ChildID >= 1 && ParentID >= 1&& "Task ID's are supposed to start at 1");
+    ChildID--;
+    ParentID--;
+
+    auto& TL = State.Tasks;
+    TL.at(ChildID).Parents->emplace(&TL.at(ParentID));
+    TL.at(ParentID).Children->emplace(&TL.at(ChildID));
   }
 
-  return {PL, TL, Deadline};
+  return State;
 }
 
+static bool isProblemInsane(ProblemState const& )
 
+Solution attemptSolution(ProblemState const& Problem) {
+  if (isProblemInsane(Problem))
+    return SolutionError();
+  return SolutionError();
+}
 
 int schedule_main() {
   ProblemState State = readProblemFromInput(std::cin);
-
+  Solution S = attemptSolution(State);
+  assert(S.IsInvalid); // FIXME
   return 0;
 }

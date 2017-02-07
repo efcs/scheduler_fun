@@ -1,6 +1,5 @@
-
-int schedule_main();
+#include "schedule.h"
 
 int main() {
-  return schedule_main();
+  schedule_main();
 }
