@@ -21,13 +21,9 @@ bool readValueImp(std::istream& Input, ValueType& Output) {
     Input >> Output;
     if (Input.eof() || Input.bad())
       return false;
-    if (Input.fail()) {
-      Input.clear();
-      Input.ignore(/*MaxSkip*/100, '\n');
-    } else {
-      assert(Input.good());
-      return true;
-    }
+    assert(!Input.fail());
+    assert(Input.good());
+    return true;
   }
 }
 
@@ -65,9 +61,7 @@ ProblemState readProblemFromInput(std::istream& Input) {
   auto [NumProcT1, NumProcT2, NumTaskT1, NumTaskT2, NumTaskT3, Deadline]
      = readValues<int, int, int, int, int, int>(Input, OK); // Read 6 ints from Input.
   assert(OK && "Failed to read the number of processors, tasks, or deadline");
-  PV(NumProcT1); PV(NumProcT2);
-  PV(NumTaskT1); PV(NumTaskT2); PV(NumTaskT3);
-  PV(Deadline);
+  PV(NumProcT1); PV(NumProcT2); PV(NumTaskT1); PV(NumTaskT2); PV(NumTaskT3); PV(Deadline);
 
   ProblemState State((Deadline));
 
@@ -110,7 +104,9 @@ ProblemState readProblemFromInput(std::istream& Input) {
   return State;
 }
 
-static bool isProblemInsane(ProblemState const& )
+static bool isProblemInsane(ProblemState const& ) {
+  return false;
+}
 
 Solution attemptSolution(ProblemState const& Problem) {
   if (isProblemInsane(Problem))
